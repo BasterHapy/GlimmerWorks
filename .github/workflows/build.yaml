@@ -1,0 +1,44 @@
+name: GlimmerWorks Build
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+    branches: ["main", "master"]
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive # 如果项目有子模块（如三方库），这一步至关重要
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup CMake
+        uses: jwlawrence/cmake-action@v1.4.1
+
+      - name: Configure CMake
+        # 根据 Build Guide，通常需要创建一个 build 目录并进行配置
+        run: |
+          cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build Project
+        # 使用 MSBuild 或 CMake 进行编译
+        run: |
+          cmake --build ${{github.workspace}}/build --config Release
+
+      - name: Upload Artifacts
+        # 编译完成后，将生成的 exe 或 bin 文件上传作为附件
+        uses: actions/actions-artifact@v4
+        with:
+          name: GlimmerWorks-Release
+          path: |
+            ${{github.workspace}}/build/bin/Release/
+            ${{github.workspace}}/build/Release/
+          if-no-files-found: warn
