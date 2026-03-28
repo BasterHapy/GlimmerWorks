@@ -1,44 +1,55 @@
-name: GlimmerWorks Build
+name: GlimmerWorks Linux Build
 
 on:
   push:
     branches: ["main", "master"]
   pull_request:
     branches: ["main", "master"]
-  workflow_dispatch: # 允许手动触发
+  workflow_dispatch:
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build-linux:
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive # 如果项目有子模块（如三方库），这一步至关重要
+          submodules: recursive
 
-      - name: Add MSBuild to PATH
-        uses: microsoft/setup-msbuild@v2
-
-      - name: Setup CMake
-        uses: jwlawrence/cmake-action@v1.4.1
+      - name: Install Dependencies
+        # 根据 GlimmerWorks 的 Wiki 描述，Linux 下通常需要这些基础库
+        # 如果编译报 "X11" 或 "GL" 相关错误，请取消下面 libx11 等库的注释
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libx11-dev \
+            libxcursor-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            libxi-dev \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev
 
       - name: Configure CMake
-        # 根据 Build Guide，通常需要创建一个 build 目录并进行配置
+        # 使用 -DCMAKE_BUILD_TYPE=Release 优化性能
         run: |
-          cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=Release
+          cmake -B ${{github.workspace}}/build \
+                -DCMAKE_BUILD_TYPE=Release
 
       - name: Build Project
-        # 使用 MSBuild 或 CMake 进行编译
+        # 使用 -j 参数并行编译以加快速度（nproc 自动获取 CPU 核心数）
         run: |
-          cmake --build ${{github.workspace}}/build --config Release
+          cmake --build ${{github.workspace}}/build --config Release --parallel $(nproc)
 
       - name: Upload Artifacts
-        # 编译完成后，将生成的 exe 或 bin 文件上传作为附件
-        uses: actions/actions-artifact@v4
+        uses: actions/upload-artifact@v4
         with:
-          name: GlimmerWorks-Release
+          name: GlimmerWorks-Linux-Binaries
           path: |
-            ${{github.workspace}}/build/bin/Release/
-            ${{github.workspace}}/build/Release/
+            ${{github.workspace}}/build/bin/
+            ${{github.workspace}}/build/*.so
+            ${{github.workspace}}/build/GlimmerWorks*
           if-no-files-found: warn
