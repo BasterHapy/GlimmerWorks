@@ -31,18 +31,25 @@ jobs:
           sudo apt-get install -y \
             build-essential \
             ninja-build \
+            pkg-config \
             libx11-dev \
             libxcursor-dev \
             libxinerama-dev \
             libxrandr-dev \
             libxi-dev \
+            libxfixes-dev \
+            libxext-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            wayland-protocols \
+            libdbus-1-dev \
             libgl1-mesa-dev \
             libglu1-mesa-dev \
+            libegl1-mesa-dev \
             libvulkan-dev \
             libasound2-dev \
             libpulse-dev \
-            libudev-dev \
-            libxext-dev
+            libudev-dev
 
       - name: Configure CMake
         run: |
