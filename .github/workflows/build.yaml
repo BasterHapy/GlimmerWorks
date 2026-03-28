@@ -1,4 +1,4 @@
-name: GlimmerWorks Linux Production Build
+name: GlimmerWorks Build
 
 on:
   push:
@@ -7,31 +7,26 @@ on:
     branches: ["main", "master"]
   workflow_dispatch:
 
+env:
+  CMAKE_BUILD_TYPE: Release
+
 jobs:
-  build:
+  # ==================== Linux Build ====================
+  build-linux:
     runs-on: ubuntu-latest
+    container:
+      image: ubuntu:24.04
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          fetch-depth: 0
-
-      # --- 关键新增步骤：升级 CMake ---
-      - name: Setup CMake 4.x
-        uses: lukka/get-cmake@latest
-        # 或者指定具体版本:
-        # with:
-        #   cmakeVersion: 4.3.0
-
       - name: Install System Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          apt-get update
+          apt-get install -y \
             build-essential \
+            git \
             ninja-build \
             pkg-config \
+            cmake \
             libx11-dev \
             libxcursor-dev \
             libxinerama-dev \
@@ -49,27 +44,149 @@ jobs:
             libvulkan-dev \
             libasound2-dev \
             libpulse-dev \
-            libudev-dev
+            libudev-dev \
+            protobuf-compiler \
+            libprotobuf-dev \
+            curl \
+            ca-certificates
+
+      - name: Upgrade CMake to 4.3+
+        run: |
+          # 检查系统 CMake 版本
+          cmake --version || true
+          
+          # 下载并安装 CMake 4.3
+          CMAKE_VERSION="4.3.0"
+          curl -L -o cmake.sh "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh"
+          chmod +x cmake.sh
+          ./cmake.sh --skip-license --prefix=/usr/local
+          
+          # 验证安装
+          cmake --version
+          which cmake
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
 
       - name: Configure CMake
         run: |
-          # 检查版本确保升级成功
-          cmake --version
           cmake -S . -B build \
             -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
             -DWAIT_FOR_INPUT=OFF
 
       - name: Build Project
         run: |
-          cmake --build build --config Release --parallel $(nproc)
+          cmake --build build --config ${{ env.CMAKE_BUILD_TYPE }} --parallel $(nproc)
 
-      - name: Upload Binaries
+      - name: Create Distribution Package
+        run: |
+          cd build
+          cpack -C ${{ env.CMAKE_BUILD_TYPE }}
+
+      - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: GlimmerWorks-Linux-Alpha
+          name: GlimmerWorks-Linux-x64
           path: |
+            build/dist/${{ env.CMAKE_BUILD_TYPE }}/*
             build/bin/
-            build/*.so
-            build/GlimmerWorks*
           if-no-files-found: warn
+          retention-days: 30
+
+  # ==================== Windows Cross-Compile Build ====================
+  build-windows:
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:24.04
+
+    steps:
+      - name: Install System Dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            build-essential \
+            git \
+            ninja-build \
+            pkg-config \
+            curl \
+            ca-certificates \
+            mingw-w64 \
+            g++-mingw-w64-x86-64 \
+            protobuf-compiler \
+            wine64
+
+      - name: Upgrade CMake to 4.3+
+        run: |
+          CMAKE_VERSION="4.3.0"
+          curl -L -o cmake.sh "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh"
+          chmod +x cmake.sh
+          ./cmake.sh --skip-license --prefix=/usr/local
+          cmake --version
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Configure CMake for Windows
+        run: |
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DCMAKE_TOOLCHAIN_FILE=mingw64.cmake \
+            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+            -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_SYSTEM_PROCESSOR=x86_64 \
+            -DWAIT_FOR_INPUT=OFF
+
+      - name: Build Project
+        run: |
+          cmake --build build --config ${{ env.CMAKE_BUILD_TYPE }} --parallel $(nproc)
+
+      - name: Create Distribution Package
+        run: |
+          cd build
+          cpack -C ${{ env.CMAKE_BUILD_TYPE }}
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlimmerWorks-Windows-x64
+          path: |
+            build/dist/${{ env.CMAKE_BUILD_TYPE }}/*
+            build/bin/
+          if-no-files-found: warn
+          retention-days: 30
+
+  # ==================== Release ====================
+  release:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download Linux Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: GlimmerWorks-Linux-x64
+          path: artifacts/linux
+
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: GlimmerWorks-Windows-x64
+          path: artifacts/windows
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/linux/*
+            artifacts/windows/*
+          generate_release_notes: true
