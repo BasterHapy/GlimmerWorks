@@ -1,4 +1,4 @@
-name: GlimmerWorks Linux Build
+name: GlimmerWorks Linux Production Build
 
 on:
   push:
@@ -8,48 +8,63 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-linux:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      # 1. 检出代码（递归同步所有子模块，这是 80% 失败的原因）
+      - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
 
-      - name: Install Dependencies
-        # 根据 GlimmerWorks 的 Wiki 描述，Linux 下通常需要这些基础库
-        # 如果编译报 "X11" 或 "GL" 相关错误，请取消下面 libx11 等库的注释
+      # 2. 安装全套开发依赖项（涵盖 X11, OpenGL, Vulkan, ALSA 等）
+      - name: Install System Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
             cmake \
+            ninja-build \
             libx11-dev \
             libxcursor-dev \
             libxinerama-dev \
             libxrandr-dev \
             libxi-dev \
             libgl1-mesa-dev \
-            libglu1-mesa-dev
+            libglu1-mesa-dev \
+            libvulkan-dev \
+            libasound2-dev \
+            libpulse-dev \
+            libudev-dev \
+            libxext-dev
 
+      # 3. 配置 CMake (使用 Ninja 提高构建速度)
       - name: Configure CMake
-        # 使用 -DCMAKE_BUILD_TYPE=Release 优化性能
         run: |
-          cmake -B ${{github.workspace}}/build \
-                -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWAIT_FOR_INPUT=OFF
 
+      # 4. 执行编译
       - name: Build Project
-        # 使用 -j 参数并行编译以加快速度（nproc 自动获取 CPU 核心数）
         run: |
-          cmake --build ${{github.workspace}}/build --config Release --parallel $(nproc)
+          cmake --build build --config Release --parallel $(nproc)
 
-      - name: Upload Artifacts
+      # 5. 自动搜索并上传构建产物
+      - name: Upload Binaries
         uses: actions/upload-artifact@v4
         with:
-          name: GlimmerWorks-Linux-Binaries
+          name: GlimmerWorks-Linux-Alpha
+          # 自动匹配 build 文件夹下所有可执行文件和库文件
           path: |
-            ${{github.workspace}}/build/bin/
-            ${{github.workspace}}/build/*.so
-            ${{github.workspace}}/build/GlimmerWorks*
+            build/bin/
+            build/*.so
+            build/GlimmerWorks*
           if-no-files-found: warn
+
+      # 6. (可选) 如果有单元测试，可以在此运行
+      # - name: Run Tests
+      #   run: cd build && ctest --output-on-failure
