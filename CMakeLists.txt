@@ -170,6 +170,8 @@ FetchContent_Declare(
         GIT_PROGRESS TRUE
         EXCLUDE_FROM_ALL
 )
+# Use vendored (bundled) freetype and harfbuzz instead of system libraries
+set(SDLTTF_VENDORED ON CACHE BOOL "Use vendored dependencies for SDL_ttf" FORCE)
 FetchContent_MakeAvailable(SDL_ttf)
 
 FetchContent_Declare(
