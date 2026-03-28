@@ -12,20 +12,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. 检出代码（递归同步所有子模块，这是 80% 失败的原因）
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 0
 
-      # 2. 安装全套开发依赖项（涵盖 X11, OpenGL, Vulkan, ALSA 等）
+      # --- 关键新增步骤：升级 CMake ---
+      - name: Setup CMake 4.x
+        uses: lukka/get-cmake@latest
+        # 或者指定具体版本:
+        # with:
+        #   cmakeVersion: 4.3.0
+
       - name: Install System Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
-            cmake \
             ninja-build \
             libx11-dev \
             libxcursor-dev \
@@ -40,31 +44,25 @@ jobs:
             libudev-dev \
             libxext-dev
 
-      # 3. 配置 CMake (使用 Ninja 提高构建速度)
       - name: Configure CMake
         run: |
+          # 检查版本确保升级成功
+          cmake --version
           cmake -S . -B build \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DWAIT_FOR_INPUT=OFF
 
-      # 4. 执行编译
       - name: Build Project
         run: |
           cmake --build build --config Release --parallel $(nproc)
 
-      # 5. 自动搜索并上传构建产物
       - name: Upload Binaries
         uses: actions/upload-artifact@v4
         with:
           name: GlimmerWorks-Linux-Alpha
-          # 自动匹配 build 文件夹下所有可执行文件和库文件
           path: |
             build/bin/
             build/*.so
             build/GlimmerWorks*
           if-no-files-found: warn
-
-      # 6. (可选) 如果有单元测试，可以在此运行
-      # - name: Run Tests
-      #   run: cd build && ctest --output-on-failure
